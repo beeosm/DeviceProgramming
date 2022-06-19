@@ -101,6 +101,48 @@ namespace DeviceProgramming.FileFormat
             return true;
         }
 
+        public bool ParseNextRecord(StringReader file, Regex regex, int countCharOffset)
+        {
+            // advance to the next line
+            string line = file.ReadLine();
+            if (line == null)
+            {
+                return false;
+            }
+            CurrentLine++;
+
+            // parse the record information using the provided regex
+            var result = regex.Match(line);
+            if (!result.Success)
+            {
+                throw new ArgumentException(String.Format("The selected record file has invalid format (line {0}).", CurrentLine));
+            }
+            ByteCount = Byte.Parse(result.Groups["bytecount"].Value, NumberStyles.HexNumber);
+            Address = UInt32.Parse(result.Groups["address"].Value, NumberStyles.HexNumber);
+            RecordType = Byte.Parse(result.Groups["recordtype"].Value, NumberStyles.HexNumber);
+            Checksum = Byte.Parse(result.Groups["checksum"].Value, NumberStyles.HexNumber);
+            var sdata = result.Groups["data"].Value;
+
+            // check if length is correct
+            if (((ByteCount * 2) + countCharOffset) != result.Length)
+            {
+                throw new ArgumentException(String.Format("The selected record file has incorrect data length (line {0}).", CurrentLine));
+            }
+
+            // parse the data into a byte array, sum them up for checksum calculation
+            int dlen = sdata.Length / 2;
+            Data = new byte[dlen];
+            DataChecksum = 0;
+
+            for (int i = 0; i < dlen; i++)
+            {
+                Data[i] = Byte.Parse(sdata.Substring(i * 2, 2), NumberStyles.HexNumber);
+                DataChecksum += Data[i];
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// This function adds the current record's data to the memory image.
         /// </summary>

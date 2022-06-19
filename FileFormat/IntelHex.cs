@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.RegularExpressions;
 using DeviceProgramming.Memory;
+using System.Text;
 
 namespace DeviceProgramming.FileFormat
 {
@@ -22,6 +23,7 @@ namespace DeviceProgramming.FileFormat
                    ext.Equals(".H86", StringComparison.OrdinalIgnoreCase);
         }
 
+
         /// <summary>
         /// Parses the contents of a file into a memory image.
         /// </summary>
@@ -39,7 +41,7 @@ namespace DeviceProgramming.FileFormat
                 {
                     // check if checksum is correct
                     var chksum = (byte)(parser.ByteCount + (parser.Address >> 8) + parser.Address + parser.RecordType + parser.DataChecksum);
-                    
+
                     // this is equal to taking 2's complement
                     chksum += parser.Checksum;
                     if (chksum != 0)
@@ -93,12 +95,100 @@ namespace DeviceProgramming.FileFormat
                                 throw new ArgumentException(String.Format("The selected hex file has invalid record format (line {0}).", parser.CurrentLine));
                             }
                             break;
-                        #endregion
+                            #endregion
                     }
                 }
 
                 if (parser.CurrentLine == 0)
-                { 
+                {
+                    throw new ArgumentException("The selected file is empty or has invalid format.");
+                }
+
+                if (!fileended)
+                {
+                    throw new ArgumentException("The selected hex file is missing hex format End Of File line.");
+                }
+                return parser.Memory;
+            }
+        }
+
+        /// <summary>
+        /// Parses the contents of a byte array into a memory image.
+        /// </summary>
+        /// <param name="array">Byte array containing string based HEX file</param>
+        /// <returns>The parsed memory image</returns>
+        public static RawMemory ParseArray(byte[] array)
+        {
+            using (StringReader file = new StringReader(Encoding.UTF8.GetString(array)))
+            {
+                bool fileended = false;
+                var parser = new TextRecordParser();
+
+                // parse each line as a record
+                while (!fileended && parser.ParseNextRecord(file, RecordRegex, CountCharOffset))
+                {
+                    // check if checksum is correct
+                    var chksum = (byte)(parser.ByteCount + (parser.Address >> 8) + parser.Address + parser.RecordType + parser.DataChecksum);
+
+                    // this is equal to taking 2's complement
+                    chksum += parser.Checksum;
+                    if (chksum != 0)
+                    {
+                        throw new ArgumentException(String.Format("The selected hex file has incorrect checksum (line {0}).", parser.CurrentLine));
+                    }
+
+                    switch ((RecordType)parser.RecordType)
+                    {
+                        case RecordType.Data:
+                            parser.SaveRecordData();
+                            break;
+
+                        case RecordType.EndOfFile:
+                            // flush the last segment
+                            parser.FlushSegment();
+                            fileended = true;
+                            break;
+
+                        case RecordType.ExtendedLinearAddress:
+                            // check the byte count here instead of coding it into the regex
+                            if (parser.ByteCount != 2)
+                            {
+                                throw new ArgumentException(String.Format("The selected hex file has invalid record format (line {0}).", parser.CurrentLine));
+                            }
+                            parser.AddressOffset = ((uint)parser.Data[0] << 24) | ((uint)parser.Data[1] << 16);
+                            break;
+
+                        case RecordType.ExtendedSegmentAddress:
+                            // check the byte count here instead of coding it into the regex
+                            if (parser.ByteCount != 2)
+                            {
+                                throw new ArgumentException(String.Format("The selected hex file has invalid record format (line {0}).", parser.CurrentLine));
+                            }
+                            parser.AddressOffset = ((uint)parser.Data[0] << 12) | ((uint)parser.Data[1] << 4);
+                            break;
+
+                        #region not used
+                        case RecordType.StartLinearAddress:
+                            // check the byte count here instead of coding it into the regex
+                            if (parser.ByteCount != 4)
+                            {
+                                throw new ArgumentException(String.Format("The selected hex file has invalid record format (line {0}).", parser.CurrentLine));
+                            }
+                            break;
+
+                        case RecordType.StartSegmentAddress:
+                            // check the byte count here instead of coding it into the regex
+                            if (parser.ByteCount != 4)
+                            {
+                                throw new ArgumentException(String.Format("The selected hex file has invalid record format (line {0}).", parser.CurrentLine));
+                            }
+                            break;
+                            #endregion
+                    }
+                }
+
+                if (parser.CurrentLine == 0)
+                {
                     throw new ArgumentException("The selected file is empty or has invalid format.");
                 }
 
